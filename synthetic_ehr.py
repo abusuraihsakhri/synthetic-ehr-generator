@@ -34,8 +34,16 @@ def lookup(query, extra=None):
 
 def process_csv(inp,out):
     import csv
+    inp_path = pathlib.Path(inp)
+    out_path = pathlib.Path(out)
+    if not inp_path.exists():
+        raise FileNotFoundError(f"Input CSV not found: {inp}")
+    if not inp_path.is_file():
+        raise ValueError(f"Input path is not a file: {inp}")
     with open(inp, newline="", encoding="utf-8-sig") as f:
         r=csv.DictReader(f); rows=list(r); fn=r.fieldnames
+        if not fn:
+            raise ValueError(f"CSV file has no headers: {inp}")
         # guess query column
         qcol = fn[0]
         for cand in ["query","test","drug","code","variant","hla","lab","name"]:
@@ -46,6 +54,7 @@ def process_csv(inp,out):
             res=lookup(row.get(qcol,""), row)
             merged={**row, "top_hit": res["top_hit"], "lookup_score": res["score"]}
             results.append(merged)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out,"w",newline="",encoding="utf-8") as f:
         w=csv.DictWriter(f, fieldnames=list(fn)+["top_hit","lookup_score"]); w.writeheader(); w.writerows(results)
     return results

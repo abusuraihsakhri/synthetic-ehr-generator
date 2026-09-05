@@ -1,7 +1,7 @@
-# Synthetic Ehr Generator
+# Synthetic EHR Generator
 
-> **Domain:** Clinical Decision Support & Biomedical Computing  
-> **Reference Guidelines & Standards:** `Standard Clinical Formulations & ISO/IEC Quality Frameworks`
+> **Domain:** Clinical Decision Support & Biomedical Computing
+> **Standards:** CAP / CLSI / ISO Standards
 
 <div align="center">
 
@@ -16,93 +16,164 @@
 
 ---
 
-## 📖 What It Does
+## Overview
 
-Synthetic EHR Generator
-Generates synthetic FHIR-like EHR encounters with demographics, labs and ICD codes for testing.
-Stdlib parser / mapper with batch CSV and single lookup.
+Synthetic EHR Generator produces synthetic FHIR-like EHR encounters with demographics, labs, and ICD codes for safe testing environments. It includes a multi-worker evaluation engine with PHI outbound protection and cryptographic audit trails.
 
 ---
 
-## ⚙️ Key Capabilities & Algorithmic Modules
+## Key Features
 
-### 🔬 Analytical Functions
-
-- **`lookup()`**: Single lookup: token overlap + substring scoring (no deps). Returns top hits.
-- **`process_csv()`** — calculates and validates process_csv parameters.
-- **`build_parser()`** — calculates and validates build_parser parameters.
-- **`main()`** — calculates and validates main parameters.
+- **Zero-PHI Outbound Guard:** AST and regex inspection blocking SSNs, MRNs, phone numbers, emails, and patient identifiers from leaving the system.
+- **HMAC-SHA256 Audit Trail:** Chained, cryptographically signed logs for every evaluation with tamper detection.
+- **Multi-Worker Evaluation:** Three specialized workers (QC Invariant, Safety Escalation, Protocol Conformance) analyze each task.
+- **FastAPI REST API:** OpenAPI 3.1 endpoints with Prometheus metrics.
+- **Batch CSV Processing:** Process large datasets with automatic column detection.
+- **CLI Interface:** Full command-line interface for all operations.
 
 ---
 
-## 📐 Mathematical Formulation & Logic
+## Installation
 
-```text
-  score = 0
+```bash
+# Clone the repository
+git clone https://github.com/abusuraihsakhri/synthetic-ehr-generator.git
+cd synthetic-ehr-generator
+
+# Create virtual environment
+python -m venv .venv
+source .venv/bin/activate  # Linux/Mac
+# or: .venv\Scripts\activate  # Windows
+
+# Install dependencies
+pip install fastapi uvicorn pydantic pytest
 ```
 
 ---
 
-## 💻 CLI Quickstart & Usage
+## Configuration
 
-### 1. Guided Interactive Mode
+Set the audit secret key for production (optional for development):
+
 ```bash
-python cli.py
+export AUDIT_SECRET_KEY="your-secure-random-key-here"
 ```
 
-### 2. Direct Parameterized Evaluation
-```bash
-python cli.py --task-id <value> --target <value> --primary <value> --secondary <value>
-```
-
-### Parameter Reference
-- `--task-id`: Specifies input measurement or parameter value.
-- `--target`: Specifies input measurement or parameter value.
-- `--primary`: Specifies input measurement or parameter value.
-- `--secondary`: Specifies input measurement or parameter value.
-- `--critical`: Specifies input measurement or parameter value.
-- `--status`: Specifies input measurement or parameter value.
-- `--input`: Specifies input measurement or parameter value.
-- `--output`: Specifies input measurement or parameter value.
-
-### Input Data Schema
-
-| Field | Description | Requirement |
-|:------|:------------|:------------|
-| `query` | Parameter / observation metric | Required |
-| `name` | Parameter / observation metric | Required |
+If not set, an ephemeral development key is generated with a warning.
 
 ---
 
-## 🛡️ Security & Enterprise Architecture
+## Usage
 
-* **Zero-PHI Outbound Interceptor:** Active AST and regex inspection blocking SSNs, MRNs, phone numbers, and patient identifiers.
-* **Tamper-Evident HMAC-SHA256 Audit Trail:** Chained, cryptographically signed logs for every evaluation and state transition.
-* **Air-Gapped LLM Reasoning Adapter:** Agnostic integration for local Ollama instances (`llama3`, `mistral`), Claude 3.5 Sonnet, GPT-4o, and deterministic test mocks.
-* **Active Learning Bayesian Calibration:** Dynamic tracker updating worker reliability weights and monitoring Brier calibration drift.
-* **FastAPI & Prometheus Telemetry:** Exposes OpenAPI 3.1 REST endpoints and operational Prometheus metrics (`/metrics`).
+### CLI Commands
+
+```bash
+# Run single task evaluation
+python cli.py audit --task-id TASK-001 --primary 28.5 --secondary 14.2
+
+# Chat with supervisor
+python cli.py chat "Explain the evaluation criteria"
+
+# Batch process CSV
+python cli.py batch -i input.csv -o results.csv
+
+# Verify audit trail integrity
+python cli.py verify-audit
+
+# Start API server
+python cli.py serve --host 127.0.0.1 --port 8000
+```
+
+### Direct Module Usage
+
+```python
+import synthetic_ehr as sehr
+
+# Single lookup
+result = sehr.lookup("creatinine")
+print(result["top_hit"], result["score"])
+
+# Batch CSV processing
+rows = sehr.process_csv("input.csv", "output.csv")
+print(f"Processed {len(rows)} rows")
+```
+
+### API Server
+
+```bash
+# Start server
+python cli.py serve
+
+# Health check
+curl http://localhost:8000/health
+
+# Submit task
+curl -X POST http://localhost:8000/api/audit \
+  -H "Content-Type: application/json" \
+  -d '{"task-id":"T001","target-identifier":"KEY-01","primary_metric":12.0}'
+
+# Get audit logs
+curl http://localhost:8000/api/audit/logs
+```
 
 ---
 
-## 🧪 Testing & Verification
-
-Run the automated test suite:
+## Testing
 
 ```bash
+# Run all tests
 pytest -v
-```
 
-Execute high-throughput batch simulation benchmarks:
+# Run with coverage
+pytest -v --cov=agents --cov=synthetic_ehr
 
-```bash
-python simulator.py --tasks 1000 --concurrency 8
+# Run simulation benchmark
+python simulator.py 100
 ```
 
 ---
 
-## 🐳 Container Deployment
+## Project Structure
 
-```bash
-docker build -t synthetic-ehr-generator .
-docker run -p 8000:8000 synthetic-ehr-generator
 ```
+synthetic-ehr-generator/
+├── agents/                  # Core evaluation engine
+│   ├── __init__.py
+│   ├── api.py              # FastAPI REST endpoints
+│   ├── base.py             # PHI Guard, Audit Trail, Security
+│   ├── learning.py         # Bayesian calibration engine
+│   ├── llm_factory.py      # LLM provider abstraction
+│   ├── metrics.py          # Prometheus metrics collector
+│   ├── models.py           # Pydantic data models
+│   ├── streamer.py         # WebSocket telemetry
+│   ├── supervisor.py       # Multi-worker orchestrator
+│   └── workers.py          # Specialized evaluation workers
+├── tests/                   # Test suite
+│   ├── test_enrichment.py
+│   ├── test_security_and_validation.py
+│   └── test_synthetic_ehr_generator.py
+├── cli.py                   # Command-line interface
+├── simulator.py             # High-throughput stress testing
+├── enrichment.py            # Feature enrichment engines
+├── synthetic_ehr.py         # Core EHR generation & lookup
+├── web/                     # Static web assets
+├── Dockerfile               # Container build
+├── docker-compose.yml       # Container orchestration
+├── openapi_spec.json        # OpenAPI specification
+└── benchmark_dataset.json   # Golden benchmark test cases
+```
+
+---
+
+## Security
+
+- **PHI Protection:** All outbound data is scanned for PHI patterns before leaving the system.
+- **Audit Integrity:** HMAC-SHA256 chained audit logs detect any tampering.
+- **No Hardcoded Secrets:** Audit keys use environment variables or ephemeral generation.
+- **Input Validation:** All file inputs are validated for existence and format.
+
+---
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
