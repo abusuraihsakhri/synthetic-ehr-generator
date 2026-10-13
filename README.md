@@ -1,179 +1,98 @@
 # Synthetic EHR Generator
 
-> **Domain:** Clinical Decision Support & Biomedical Computing
-> **Standards:** CAP / CLSI / ISO Standards
+A small, reproducible fixture generator for testing healthcare software. It produces **artificial** Patient, Encounter, Observation and optional Condition resources in a FHIR R4-shaped collection bundle, or a flat CSV table. It also retains the repository's separate example task-evaluation CLI and FastAPI service.
 
-<div align="center">
+The generated data are **not clinically validated**, drawn from real patient records, privacy-certified, or guaranteed to satisfy every FHIR profile. Do not use this software for clinical decisions or enter real patient information.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-3776AB.svg?logo=python&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688.svg?logo=fastapi&logoColor=white)
-![Audit Trail](https://img.shields.io/badge/Audit-HMAC--SHA256_Tamper--Evident-brightgreen.svg)
-![Zero-PHI Guard](https://img.shields.io/badge/Guard-Zero--PHI_Outbound-blue.svg)
-![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker&logoColor=white)
+## Browser application
 
-</div>
+The [browser interface](web/index.html) generates records and downloads JSON/CSV entirely on-device. There are no third-party JavaScript libraries, external fonts, network requests or uploads. Enter a patient count from 1 to 1000 and optionally a random seed; generate a preview, then download either format.
 
----
-
-## Overview
-
-Synthetic EHR Generator produces synthetic FHIR-like EHR encounters with demographics, labs, and ICD codes for safe testing environments. It includes a multi-worker evaluation engine with PHI outbound protection and cryptographic audit trails.
-
----
-
-## Key Features
-
-- **Zero-PHI Outbound Guard:** AST and regex inspection blocking SSNs, MRNs, phone numbers, emails, and patient identifiers from leaving the system.
-- **HMAC-SHA256 Audit Trail:** Chained, cryptographically signed logs for every evaluation with tamper detection.
-- **Multi-Worker Evaluation:** Three specialized workers (QC Invariant, Safety Escalation, Protocol Conformance) analyze each task.
-- **FastAPI REST API:** OpenAPI 3.1 endpoints with Prometheus metrics.
-- **Batch CSV Processing:** Process large datasets with automatic column detection.
-- **CLI Interface:** Full command-line interface for all operations.
-
----
-
-## Installation
+For local development, serve the static files over HTTP (module scripts may be blocked when opened through a `file://` URL):
 
 ```bash
-# Clone the repository
-git clone https://github.com/abusuraihsakhri/synthetic-ehr-generator.git
-cd synthetic-ehr-generator
+python -m http.server 8080 --directory web
+# Visit http://localhost:8080
+```
 
-# Create virtual environment
+GitHub Pages deployment is defined in `.github/workflows/pages.yml`; the repository owner must enable **Settings → Pages → Build and deployment → GitHub Actions**. A public live URL will be added when deployment is verified.
+
+## Python usage
+
+Python 3.10 or later is required.
+
+```bash
 python -m venv .venv
-source .venv/bin/activate  # Linux/Mac
-# or: .venv\Scripts\activate  # Windows
+source .venv/bin/activate
+python -m pip install -r requirements.txt
 
-# Install dependencies
-pip install fastapi uvicorn pydantic pytest
+# Generate 20 synthetic patients in a FHIR-shaped JSON bundle:
+python cli.py generate --count 20 --seed 42 --format json --output generated/fixtures.json
+
+# Generate a CSV table:
+python cli.py generate --count 20 --seed 42 --format csv --output generated/fixtures.csv
+
+# Equivalent generation via the standalone module:
+python synthetic_ehr.py generate --count 10 --seed 42 --output generated/bundle.json
 ```
 
----
+The Python and JavaScript implementations each reproduce output with the same seed **within their own implementation**; they do not produce byte-identical records across languages.
 
-## Configuration
-
-Set the audit secret key for production (optional for development):
+### Existing demonstration workflows
 
 ```bash
-export AUDIT_SECRET_KEY="your-secure-random-key-here"
-```
-
-If not set, an ephemeral development key is generated with a warning.
-
----
-
-## Usage
-
-### CLI Commands
-
-```bash
-# Run single task evaluation
 python cli.py audit --task-id TASK-001 --primary 28.5 --secondary 14.2
-
-# Chat with supervisor
-python cli.py chat "Explain the evaluation criteria"
-
-# Batch process CSV
+python cli.py chat "Explain evaluation criteria"
 python cli.py batch -i input.csv -o results.csv
-
-# Verify audit trail integrity
 python cli.py verify-audit
 
-# Start API server
+# Legacy generic keyword/CSV lookup, independent of EHR generation:
+python synthetic_ehr.py single creatinine
+python synthetic_ehr.py batch --input sample.csv --output generated/lookups.csv
+```
+
+The three evaluation workers use illustrative, fixed thresholds (primary metric >25, secondary metric >12, critical flag, and status keywords). These are **not disease-specific clinical thresholds or standards-conformance checks**. The chat interface is a deterministic mock, not a live external LLM.
+
+## FastAPI service
+
+```bash
+export AUDIT_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
 python cli.py serve --host 127.0.0.1 --port 8000
+
+curl 'http://127.0.0.1:8000/health'
+curl 'http://127.0.0.1:8000/api/generate?count=5&seed=42'
+curl -X POST 'http://127.0.0.1:8000/api/audit' \
+  -H 'Content-Type: application/json' \
+  -d '{"task_id":"T1","target_identifier":"SYN-001","primary_metric":12.0}'
 ```
 
-### Direct Module Usage
+Other endpoints: `POST /api/chat`, `GET /api/audit/logs`, `GET /metrics` (JSON counters), and generated FastAPI documentation at `/docs`.
 
-```python
-import synthetic_ehr as sehr
+For container deployment, set `AUDIT_SECRET_KEY` to a random secret before running `docker compose up --build`. The API has **no authentication or rate limiting**; do not expose it to the public internet without appropriate controls.
 
-# Single lookup
-result = sehr.lookup("creatinine")
-print(result["top_hit"], result["score"])
+## Security and privacy limitations
 
-# Batch CSV processing
-rows = sehr.process_csv("input.csv", "output.csv")
-print(f"Processed {len(rows)} rows")
-```
+- The browser generator operates entirely locally and uses fabricated IDs, dates, diagnosis labels and laboratory values. It does **not** process supplied patient records.
+- The Python evaluation engine has a **heuristic regex guard** for several identifying patterns. It is **not a de-identification solution** and cannot guarantee the absence of protected health information.
+- Task audits use HMAC-SHA256 over canonical metadata with a verified hash chain. The audit key must be configured for persistent key identity. The audit log itself is held **in process memory**, not durable storage.
+- No remote-model integration is implemented. The only supported model provider is the local deterministic mock.
+- Synthetic distributions, associations, codes and units are demonstration fixtures, not validated research cohorts.
 
-### API Server
+## Tests
 
 ```bash
-# Start server
-python cli.py serve
-
-# Health check
-curl http://localhost:8000/health
-
-# Submit task
-curl -X POST http://localhost:8000/api/audit \
-  -H "Content-Type: application/json" \
-  -d '{"task-id":"T001","target-identifier":"KEY-01","primary_metric":12.0}'
-
-# Get audit logs
-curl http://localhost:8000/api/audit/logs
+python -m pytest -q
+python -m compileall -q agents ehr_generation.py synthetic_ehr.py cli.py
+node --check web/app.mjs
+node --test tests/test_browser.mjs
 ```
 
----
+CI runs Python tests on 3.10, 3.11 and 3.12, along with static browser checks. Node.js 22 or later is recommended for the local browser test suite; it is not needed to use the browser app.
 
-## Testing
+## Technology and compatibility
 
-```bash
-# Run all tests
-pytest -v
-
-# Run with coverage
-pytest -v --cov=agents --cov=synthetic_ehr
-
-# Run simulation benchmark
-python simulator.py 100
-```
-
----
-
-## Project Structure
-
-```
-synthetic-ehr-generator/
-├── agents/                  # Core evaluation engine
-│   ├── __init__.py
-│   ├── api.py              # FastAPI REST endpoints
-│   ├── base.py             # PHI Guard, Audit Trail, Security
-│   ├── learning.py         # Bayesian calibration engine
-│   ├── llm_factory.py      # LLM provider abstraction
-│   ├── metrics.py          # Prometheus metrics collector
-│   ├── models.py           # Pydantic data models
-│   ├── streamer.py         # WebSocket telemetry
-│   ├── supervisor.py       # Multi-worker orchestrator
-│   └── workers.py          # Specialized evaluation workers
-├── tests/                   # Test suite
-│   ├── test_enrichment.py
-│   ├── test_security_and_validation.py
-│   └── test_synthetic_ehr_generator.py
-├── cli.py                   # Command-line interface
-├── simulator.py             # High-throughput stress testing
-├── enrichment.py            # Feature enrichment engines
-├── synthetic_ehr.py         # Core EHR generation & lookup
-├── web/                     # Static web assets
-├── Dockerfile               # Container build
-├── docker-compose.yml       # Container orchestration
-├── openapi_spec.json        # OpenAPI specification
-└── benchmark_dataset.json   # Golden benchmark test cases
-```
-
----
-
-## Security
-
-- **PHI Protection:** All outbound data is scanned for PHI patterns before leaving the system.
-- **Audit Integrity:** HMAC-SHA256 chained audit logs detect any tampering.
-- **No Hardcoded Secrets:** Audit keys use environment variables or ephemeral generation.
-- **Input Validation:** All file inputs are validated for existence and format.
-
----
+Python standard library for fixture generation, Pydantic 2 / FastAPI / Uvicorn for the optional API, HTML/CSS/ES modules for the offline browser app, pytest and Node's built-in test runner for verification. Recent versions of Chrome, Firefox, Safari and Edge support the required browser APIs; cross-browser manual testing has not been certified.
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+[MIT](LICENSE).
