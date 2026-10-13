@@ -93,3 +93,10 @@ def test_api_rejects_sensitive_values_and_nested_metadata():
             task_id="t", target_identifier="key", primary_metric=1,
             attributes={"contact": "person@example.com"},
         ))
+
+
+def test_api_generate_returns_linked_bundle():
+    from agents.api import api_generate
+    result = api_generate(count=4, seed=123)
+    assert result["resourceType"] == "Bundle"
+    assert sum(item["resource"]["resourceType"] == "Patient" for item in result["entry"]) == 4
