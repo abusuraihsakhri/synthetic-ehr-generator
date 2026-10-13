@@ -5,6 +5,7 @@ Generates synthetic FHIR-like EHR encounters with demographics, labs and ICD cod
 Stdlib parser / mapper with batch CSV and single lookup.
 """
 import argparse, csv, sys, re, json, pathlib
+from ehr_generation import generate_records, generate_bundle, write_csv
 
 def lookup(query, extra=None):
     """Single lookup: token overlap + substring scoring (no deps). Returns top hits."""
@@ -64,6 +65,11 @@ def build_parser():
     sub=p.add_subparsers(dest="cmd", required=True)
     s=sub.add_parser("single"); s.add_argument("query", nargs="?", default="creatinine"); s.add_argument("--query", dest="q2")
     b=sub.add_parser("batch"); b.add_argument("--input", required=True); b.add_argument("--output", required=True)
+    g=sub.add_parser("generate", help="Create synthetic EHR fixtures")
+    g.add_argument("--count", type=int, default=10)
+    g.add_argument("--seed", type=int)
+    g.add_argument("--format", choices=("json", "csv"), default="json")
+    g.add_argument("--output", required=True)
     return p
 
 def main(argv=None):
@@ -73,6 +79,19 @@ def main(argv=None):
         print(lookup(q)); return 0
     if a.cmd=="batch":
         res=process_csv(a.input, a.output); print(f"Processed {len(res)} -> {a.output}"); return 0
+    if a.cmd=="generate":
+        try:
+            if a.format == "csv":
+                write_csv(generate_records(a.count, a.seed), a.output)
+            else:
+                path = pathlib.Path(a.output)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(json.dumps(generate_bundle(a.count, a.seed), indent=2) + "\n", encoding="utf-8")
+        except (ValueError, OSError) as exc:
+            print(f"Generation failed: {exc}", file=sys.stderr)
+            return 1
+        print(f"Generated {a.count} synthetic records -> {a.output}")
+        return 0
     p.print_help(); return 1
 
 if __name__=="__main__":
