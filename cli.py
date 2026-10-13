@@ -7,7 +7,7 @@ import json
 import sys
 from agents.models import SystemTaskPayload
 from agents.supervisor import SystemSupervisor
-from agents.base import AuditLogger, SecurityException
+from agents.base import AuditLogger, SecurityException, PHIGuard
 from pydantic import ValidationError
 from ehr_generation import generate_bundle, generate_records, write_csv
 
@@ -122,6 +122,7 @@ def main(argv=None):
                     status_descriptor=r.get("status_descriptor", "NOMINAL"),
                     is_critical_flag=str(r.get("is_critical_flag", "")).lower() in ("true", "1", "yes"),
                 )
+                PHIGuard.assert_no_phi(json.dumps(r, default=str))
                 dossier = supervisor.process_task(payload)
             except (ValueError, TypeError, ValidationError, SecurityException) as e:
                 print(f"Skipping invalid or sensitive CSV row: {e.__class__.__name__}", file=sys.stderr)
