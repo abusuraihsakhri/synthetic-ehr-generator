@@ -93,7 +93,7 @@ def generate_bundle(count: int = 10, seed: int | None = None) -> dict:
                 "subject": {"reference": f"Patient/{pid}"},
                 "encounter": {"reference": f"Encounter/{eid}"},
             })
-        entries.extend({"fullUrl": f'urn:uuid:{r["resourceType"]}-{r["id"]}', "resource": r}
+        entries.extend({"fullUrl": f'https://example.invalid/fhir/{r["resourceType"]}/{r["id"]}', "resource": r}
                        for r in resources)
     return {"resourceType": "Bundle", "type": "collection", "entry": entries}
 
