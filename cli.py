@@ -7,7 +7,8 @@ import json
 import sys
 from agents.models import SystemTaskPayload
 from agents.supervisor import SystemSupervisor
-from agents.base import AuditLogger
+from agents.base import AuditLogger, SecurityException
+from pydantic import ValidationError
 from ehr_generation import generate_bundle, generate_records, write_csv
 
 supervisor = SystemSupervisor(model_provider="mock")
@@ -109,7 +110,7 @@ def main(argv=None):
             print(f"Error reading CSV file: {e}", file=sys.stderr)
             return 1
 
-        out_fields = fieldnames + ["overall_urgency", "integrity_status", "total_alerts", "audit_hash"]
+        out_fields = list(dict.fromkeys(fieldnames + ["overall_urgency", "integrity_status", "total_alerts", "audit_hash"]))
         out_rows = []
         for r in rows:
             try:
@@ -121,10 +122,10 @@ def main(argv=None):
                     status_descriptor=r.get("status_descriptor", "NOMINAL"),
                     is_critical_flag=str(r.get("is_critical_flag", "")).lower() in ("true", "1", "yes"),
                 )
-            except (ValueError, TypeError) as e:
-                print(f"Error parsing row {r}: {e}", file=sys.stderr)
+                dossier = supervisor.process_task(payload)
+            except (ValueError, TypeError, ValidationError, SecurityException) as e:
+                print(f"Skipping invalid or sensitive CSV row: {e.__class__.__name__}", file=sys.stderr)
                 continue
-            dossier = supervisor.process_task(payload)
             row_dict = dict(r)
             row_dict["overall_urgency"] = dossier.overall_urgency.value
             row_dict["integrity_status"] = dossier.integrity_status.value
@@ -143,7 +144,7 @@ def main(argv=None):
             print(f"Error writing output file: {e}", file=sys.stderr)
             return 1
         print(f"Processed {len(out_rows)} records -> {args.output}")
-        return 0
+        return 0 if len(out_rows) == len(rows) else 1
 
     if args.command == "generate":
         from pathlib import Path
