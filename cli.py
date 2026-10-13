@@ -7,7 +7,9 @@ import json
 import sys
 from agents.models import SystemTaskPayload
 from agents.supervisor import SystemSupervisor
-from agents.base import AuditLogger
+from agents.base import AuditLogger, SecurityException, PHIGuard
+from pydantic import ValidationError
+from ehr_generation import generate_bundle, generate_records, write_csv
 
 supervisor = SystemSupervisor(model_provider="mock")
 
@@ -36,6 +38,13 @@ def main(argv=None):
 
     # Verify Audit
     subparsers.add_parser("verify-audit", help="Verify HMAC audit trail integrity")
+
+    # Synthetic test fixtures
+    p_generate = subparsers.add_parser("generate", help="Generate synthetic EHR records")
+    p_generate.add_argument("--count", type=int, default=10)
+    p_generate.add_argument("--seed", type=int, default=None)
+    p_generate.add_argument("--format", choices=("json", "csv"), default="json")
+    p_generate.add_argument("-o", "--output", required=True)
 
     # Serve
     p_serve = subparsers.add_parser("serve", help="Launch FastAPI REST server")
@@ -101,7 +110,7 @@ def main(argv=None):
             print(f"Error reading CSV file: {e}", file=sys.stderr)
             return 1
 
-        out_fields = fieldnames + ["overall_urgency", "integrity_status", "total_alerts", "audit_hash"]
+        out_fields = list(dict.fromkeys(fieldnames + ["overall_urgency", "integrity_status", "total_alerts", "audit_hash"]))
         out_rows = []
         for r in rows:
             try:
@@ -113,10 +122,11 @@ def main(argv=None):
                     status_descriptor=r.get("status_descriptor", "NOMINAL"),
                     is_critical_flag=str(r.get("is_critical_flag", "")).lower() in ("true", "1", "yes"),
                 )
-            except (ValueError, TypeError) as e:
-                print(f"Error parsing row {r}: {e}", file=sys.stderr)
+                PHIGuard.assert_no_phi(json.dumps(r, default=str))
+                dossier = supervisor.process_task(payload)
+            except (ValueError, TypeError, ValidationError, SecurityException) as e:
+                print(f"Skipping invalid or sensitive CSV row: {e.__class__.__name__}", file=sys.stderr)
                 continue
-            dossier = supervisor.process_task(payload)
             row_dict = dict(r)
             row_dict["overall_urgency"] = dossier.overall_urgency.value
             row_dict["integrity_status"] = dossier.integrity_status.value
@@ -135,6 +145,24 @@ def main(argv=None):
             print(f"Error writing output file: {e}", file=sys.stderr)
             return 1
         print(f"Processed {len(out_rows)} records -> {args.output}")
+        return 0 if len(out_rows) == len(rows) else 1
+
+    if args.command == "generate":
+        from pathlib import Path
+        try:
+            destination = Path(args.output)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            if args.format == "csv":
+                write_csv(generate_records(args.count, args.seed), destination)
+            else:
+                destination.write_text(
+                    json.dumps(generate_bundle(args.count, args.seed), indent=2) + "\n",
+                    encoding="utf-8",
+                )
+        except (ValueError, OSError) as exc:
+            print(f"Generation failed: {exc}", file=sys.stderr)
+            return 1
+        print(f"Generated {args.count} synthetic records -> {args.output}")
         return 0
 
     if args.command == "serve":

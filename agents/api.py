@@ -2,9 +2,10 @@
 FastAPI REST API Server for Synthetic Ehr Generator.
 """
 from typing import Dict, Any, List
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
+from ehr_generation import generate_bundle
 from pydantic import BaseModel
-from .base import AuditLogger, PHIGuard
+from .base import AuditLogger, PHIGuard, SecurityException
 from .models import SystemTaskPayload, ConsensusDossier
 from .supervisor import SystemSupervisor
 
@@ -35,9 +36,18 @@ def metrics():
     }
 
 
+@app.get("/api/generate")
+def api_generate(count: int = Query(default=10, ge=1, le=1000), seed: int | None = None):
+    """Return a bounded, FHIR R4-shaped synthetic test bundle."""
+    return generate_bundle(count, seed)
+
+
 @app.post("/api/audit")
 def api_audit(payload: SystemTaskPayload):
-    dossier = supervisor.process_task(payload)
+    try:
+        dossier = supervisor.process_task(payload)
+    except SecurityException:
+        raise HTTPException(status_code=400, detail="Sensitive identifier detected in task input")
     return dossier.to_dict()
 
 
@@ -46,8 +56,8 @@ def api_chat(req: ChatRequest):
     try:
         ans = supervisor.query_supervisory_chat(req.query)
         return {"response": ans}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except SecurityException:
+        raise HTTPException(status_code=400, detail="Sensitive identifier detected in chat input")
 
 
 @app.get("/api/audit/logs")
