@@ -46,3 +46,37 @@ test("HTML loads local module without external dependencies", () => {
   assert.match(html, /id="json-download"/);
   assert.match(html, /id="csv-download"/);
 });
+
+test("browser form events generate preview and activate downloads", async () => {
+  const ids = ["message", "report", "generate-form", "count", "seed",
+    "record-count", "resource-count", "seed-used", "json-download",
+    "csv-download", "audit-form", "primary", "secondary", "descriptor", "critical",
+    "audit-report"];
+  const nodes = new Map(ids.map(id => [id, {
+    value: "", textContent: "", disabled: true, checked: false,
+    listeners: {},
+    addEventListener(type, fn) { this.listeners[type] = fn; },
+  }]));
+  nodes.get("count").value = "4";
+  nodes.get("seed").value = "12";
+  nodes.get("primary").value = "30";
+  nodes.get("secondary").value = "2";
+  nodes.get("descriptor").value = "NOMINAL";
+  const oldDoc = globalThis.document;
+  globalThis.document = {getElementById(id) {return nodes.get(id);}};
+  try {
+    await import("../web/app.mjs?ui-smoke-test");
+    const event = {preventDefault() {}};
+    nodes.get("generate-form").listeners.submit(event);
+    assert.equal(nodes.get("record-count").textContent, "4");
+    assert.equal(nodes.get("seed-used").textContent, "12");
+    assert.equal(nodes.get("json-download").disabled, false);
+    assert.equal(nodes.get("csv-download").disabled, false);
+    assert.match(nodes.get("report").textContent, /"resourceType": "Patient"/);
+    nodes.get("audit-form").listeners.submit(event);
+    assert.match(nodes.get("audit-report").textContent, /ELEVATED_RISK/);
+  } finally {
+    if (oldDoc === undefined) delete globalThis.document;
+    else globalThis.document = oldDoc;
+  }
+});
