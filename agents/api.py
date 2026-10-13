@@ -2,7 +2,8 @@
 FastAPI REST API Server for Synthetic Ehr Generator.
 """
 from typing import Dict, Any, List
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
+from ehr_generation import generate_bundle
 from pydantic import BaseModel
 from .base import AuditLogger, PHIGuard, SecurityException
 from .models import SystemTaskPayload, ConsensusDossier
@@ -33,6 +34,12 @@ def metrics():
         "audit_blocks_total": len(AuditLogger.get_trail()),
         "system_status": "NOMINAL_OPTIMAL"
     }
+
+
+@app.get("/api/generate")
+def api_generate(count: int = Query(default=10, ge=1, le=1000), seed: int | None = None):
+    """Return a bounded, FHIR R4-shaped synthetic test bundle."""
+    return generate_bundle(count, seed)
 
 
 @app.post("/api/audit")
