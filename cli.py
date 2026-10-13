@@ -8,6 +8,7 @@ import sys
 from agents.models import SystemTaskPayload
 from agents.supervisor import SystemSupervisor
 from agents.base import AuditLogger
+from ehr_generation import generate_bundle, generate_records, write_csv
 
 supervisor = SystemSupervisor(model_provider="mock")
 
@@ -36,6 +37,13 @@ def main(argv=None):
 
     # Verify Audit
     subparsers.add_parser("verify-audit", help="Verify HMAC audit trail integrity")
+
+    # Synthetic test fixtures
+    p_generate = subparsers.add_parser("generate", help="Generate synthetic EHR records")
+    p_generate.add_argument("--count", type=int, default=10)
+    p_generate.add_argument("--seed", type=int, default=None)
+    p_generate.add_argument("--format", choices=("json", "csv"), default="json")
+    p_generate.add_argument("-o", "--output", required=True)
 
     # Serve
     p_serve = subparsers.add_parser("serve", help="Launch FastAPI REST server")
@@ -135,6 +143,24 @@ def main(argv=None):
             print(f"Error writing output file: {e}", file=sys.stderr)
             return 1
         print(f"Processed {len(out_rows)} records -> {args.output}")
+        return 0
+
+    if args.command == "generate":
+        from pathlib import Path
+        try:
+            destination = Path(args.output)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            if args.format == "csv":
+                write_csv(generate_records(args.count, args.seed), destination)
+            else:
+                destination.write_text(
+                    json.dumps(generate_bundle(args.count, args.seed), indent=2) + "\n",
+                    encoding="utf-8",
+                )
+        except (ValueError, OSError) as exc:
+            print(f"Generation failed: {exc}", file=sys.stderr)
+            return 1
+        print(f"Generated {args.count} synthetic records -> {args.output}")
         return 0
 
     if args.command == "serve":
